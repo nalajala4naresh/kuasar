@@ -27,6 +27,7 @@ use std::{
 use anyhow::anyhow;
 use containerd_sandbox::error::Result;
 use futures_util::TryStreamExt;
+use log;
 use libc::{IFF_MULTI_QUEUE, IFF_NO_PI, IFF_TAP, IFF_VNET_HDR};
 use netlink_packet_route::link::{
     InfoData, InfoIpVlan, InfoKind, InfoMacVlan, InfoMacVtap, InfoVlan, InfoVxlan, LinkFlag,
@@ -268,6 +269,14 @@ impl NetworkInterface {
                     if address.is_loopback() {
                         intf.r#type = LinkType::Loopback;
                     }
+                    
+                    // Skip IPv6 link-local addresses - they should be auto-assigned by kernel
+                    // and trying to manually assign them causes EOPNOTSUPP error
+                    if address.is_ipv6() && is_link_local_ipv6(address) {
+                        log::debug!("Skipping IPv6 link-local address {} during discovery - will be auto-assigned by kernel", address);
+                        continue;
+                    }
+                    
                     intf.ip_addresses.push(IpNet::new(address, mask_len));
                 }
             }
@@ -647,5 +656,19 @@ mod tests {
             .args(["tuntap", "del", tap_name])
             .output()
             .expect("failed to delete tap dev");
+    }
+}
+
+/// Check if an IPv6 address is a link-local address (fe80::/10)
+fn is_link_local_ipv6(ip: std::net::IpAddr) -> bool {
+    if let std::net::IpAddr::V6(ipv6) = ip {
+        let octets = ipv6.octets();
+        // Link-local addresses start with fe80::/10 (1111111010...)
+        // First byte: 0xfe (11111110)
+        // Second byte: top 2 bits should be 10 (0x80-0xbf)
+        // So we check: first byte is 0xfe AND second byte is in range 0x80-0xbf
+        octets[0] == 0xfe && octets[1] >= 0x80 && octets[1] <= 0xbf
+    } else {
+        false
     }
 }

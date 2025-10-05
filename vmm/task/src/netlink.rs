@@ -225,12 +225,6 @@ impl Handle {
         I: IntoIterator<Item = IpNetwork>,
     {
         for net in list.into_iter() {
-            // Skip IPv6 link-local addresses - let kernel auto-assign them
-            if net.ip().is_ipv6() {
-                log::debug!("Skipping IPv6  address {} - will be auto-assigned by kernel", net.ip());
-                continue;
-            }
-            
             self.handle
                 .address()
                 .add(index, net.ip(), net.prefix())
