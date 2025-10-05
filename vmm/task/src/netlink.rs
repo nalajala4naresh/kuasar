@@ -661,8 +661,46 @@ fn is_link_local_ipv6(ip: IpAddr) -> bool {
     if let IpAddr::V6(ipv6) = ip {
         let octets = ipv6.octets();
         // Link-local addresses start with fe80::/10 (1111111010...)
-        octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80
+        // First byte: 0xfe (11111110)
+        // Second byte: top 2 bits should be 10 (0x80-0xbf)
+        // So we check: first byte is 0xfe AND second byte is in range 0x80-0xbf
+        let is_link_local = octets[0] == 0xfe && octets[1] >= 0x80 && octets[1] <= 0xbf;
+        log::debug!("Checking IPv6 address {}: octets[0]={:02x}, octets[1]={:02x}, is_link_local={}", 
+                   ip, octets[0], octets[1], is_link_local);
+        is_link_local
     } else {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::IpAddr;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_is_link_local_ipv6() {
+        // Test the specific address that was causing issues
+        let test_addr: IpAddr = FromStr::from_str("fe80::cb4:7ff:fe9e:c569").unwrap();
+        assert!(is_link_local_ipv6(test_addr), "fe80::cb4:7ff:fe9e:c569 should be detected as link-local");
+        
+        // Test other link-local addresses
+        let fe80_addr: IpAddr = FromStr::from_str("fe80::1").unwrap();
+        assert!(is_link_local_ipv6(fe80_addr), "fe80::1 should be detected as link-local");
+        
+        let fe80_another: IpAddr = FromStr::from_str("fe80::abcd:1234:5678:9abc").unwrap();
+        assert!(is_link_local_ipv6(fe80_another), "fe80::abcd:1234:5678:9abc should be detected as link-local");
+        
+        // Test non-link-local addresses
+        let global_addr: IpAddr = FromStr::from_str("2001:db8::1").unwrap();
+        assert!(!is_link_local_ipv6(global_addr), "2001:db8::1 should NOT be detected as link-local");
+        
+        let local_addr: IpAddr = FromStr::from_str("fc00::1").unwrap();
+        assert!(!is_link_local_ipv6(local_addr), "fc00::1 should NOT be detected as link-local");
+        
+        // Test IPv4 address
+        let ipv4_addr: IpAddr = FromStr::from_str("192.168.1.1").unwrap();
+        assert!(!is_link_local_ipv6(ipv4_addr), "IPv4 address should NOT be detected as link-local");
     }
 }
