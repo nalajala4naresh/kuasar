@@ -16,6 +16,7 @@ use containerd_shim::{
     other, other_error,
     protos::protobuf::EnumOrUnknown,
 };
+use log;
 use futures::{future, TryStreamExt};
 use ipnetwork::{IpNetwork, Ipv4Network, Ipv6Network};
 use netlink_packet_route::{
@@ -224,6 +225,12 @@ impl Handle {
         I: IntoIterator<Item = IpNetwork>,
     {
         for net in list.into_iter() {
+            // Skip IPv6 link-local addresses - let kernel auto-assign them
+            if net.ip().is_ipv6() && is_link_local_ipv6(net.ip()) {
+                log::debug!("Skipping IPv6 link-local address {} - will be auto-assigned by kernel", net.ip());
+                continue;
+            }
+            
             self.handle
                 .address()
                 .add(index, net.ip(), net.prefix())
@@ -647,4 +654,15 @@ fn parse_mac_address(addr: &str) -> Result<[u8; 6]> {
     ];
 
     Ok(arr)
+}
+
+/// Check if an IPv6 address is a link-local address (fe80::/10)
+fn is_link_local_ipv6(ip: IpAddr) -> bool {
+    if let IpAddr::V6(ipv6) = ip {
+        let octets = ipv6.octets();
+        // Link-local addresses start with fe80::/10 (1111111010...)
+        octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80
+    } else {
+        false
+    }
 }
