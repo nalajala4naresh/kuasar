@@ -63,8 +63,8 @@ async fn get_route(
                 routes.push(r);
             }
             Err(e) => {
-                // ignore those routes that can not be parsed
-                debug!("can not parse the route message to route {}", e);
+                // ignore those routes that can not be parsed (including IPv6 link-local routes)
+                debug!("Skipping route: {}", e);
             }
         }
     }

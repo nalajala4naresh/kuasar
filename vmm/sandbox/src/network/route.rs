@@ -69,14 +69,28 @@ impl Route {
         for attribute in msg.attributes.into_iter() {
             match attribute {
                 RouteAttribute::Destination(v) => {
-                    let ip = convert_to_ip_address(v)?.to_string();
+                    let ip = convert_to_ip_address(v)?;
+                    // Skip routes with IPv6 link-local destinations
+                    if ip.is_ipv6() && is_link_local_ipv6(ip) {
+                        return Err(anyhow!("Skipping route with IPv6 link-local destination").into());
+                    }
                     route.dest = format!("{}/{}", ip, msg.header.destination_prefix_length);
                 }
                 RouteAttribute::Source(v) => {
-                    route.source = convert_to_ip_address(v)?.to_string();
+                    let ip = convert_to_ip_address(v)?;
+                    // Skip routes with IPv6 link-local sources
+                    if ip.is_ipv6() && is_link_local_ipv6(ip) {
+                        return Err(anyhow!("Skipping route with IPv6 link-local source").into());
+                    }
+                    route.source = ip.to_string();
                 }
                 RouteAttribute::Gateway(v) => {
-                    route.gateway = convert_to_ip_address(v)?.to_string();
+                    let ip = convert_to_ip_address(v)?;
+                    // Skip routes with IPv6 link-local gateways
+                    if ip.is_ipv6() && is_link_local_ipv6(ip) {
+                        return Err(anyhow!("Skipping route with IPv6 link-local gateway").into());
+                    }
+                    route.gateway = ip.to_string();
                 }
                 RouteAttribute::Oif(u) => {
                     intfs
@@ -89,5 +103,19 @@ impl Route {
             }
         }
         Ok(route)
+    }
+}
+
+/// Check if an IPv6 address is a link-local address (fe80::/10)
+fn is_link_local_ipv6(ip: std::net::IpAddr) -> bool {
+    if let std::net::IpAddr::V6(ipv6) = ip {
+        let octets = ipv6.octets();
+        // Link-local addresses start with fe80::/10 (1111111010...)
+        // First byte: 0xfe (11111110)
+        // Second byte: top 2 bits should be 10 (0x80-0xbf)
+        // So we check: first byte is 0xfe AND second byte is in range 0x80-0xbf
+        octets[0] == 0xfe && octets[1] >= 0x80 && octets[1] <= 0xbf
+    } else {
+        false
     }
 }
